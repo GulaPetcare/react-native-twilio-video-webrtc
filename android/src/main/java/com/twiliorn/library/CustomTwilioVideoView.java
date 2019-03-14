@@ -377,7 +377,7 @@ public class CustomTwilioVideoView extends View implements LifecycleEventListene
         } else {
             if (android.os.Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
                 audioManager.abandonAudioFocus(this);
-            } else {
+            } else if (audioFocusRequest != null) {
                 audioManager.abandonAudioFocusRequest(audioFocusRequest);
             }
 
