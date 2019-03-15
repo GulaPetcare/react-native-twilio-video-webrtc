@@ -169,6 +169,10 @@ public class CustomTwilioVideoView extends View implements LifecycleEventListene
         audioManager = (AudioManager) themedReactContext.getSystemService(Context.AUDIO_SERVICE);
         myNoisyAudioStreamReceiver = new BecomingNoisyReceiver();
         intentFilter = new IntentFilter(Intent.ACTION_HEADSET_PLUG);
+
+        // create local media here to allow local camera preview before connect
+        createCameraCapturer();
+        createLocalMedia();
     }
 
     // ===== SETUP =================================================================================
@@ -182,11 +186,7 @@ public class CustomTwilioVideoView extends View implements LifecycleEventListene
                 .build();
     }
 
-    private void createLocalMedia() {
-        // Share your microphone
-        localAudioTrack = LocalAudioTrack.create(getContext(), true);
-        Log.i("CustomTwilioVideoView", "Create local media");
-
+    private void createCameraCapturer() {
         // Share your camera
         cameraCapturer = new CameraCapturer(
                 getContext(),
@@ -208,15 +208,24 @@ public class CustomTwilioVideoView extends View implements LifecycleEventListene
                     }
                 }
         );
+    }
 
-        if (cameraCapturer.getSupportedFormats().size() > 0) {
-            localVideoTrack = LocalVideoTrack.create(getContext(), true, cameraCapturer, buildVideoConstraints());
-            if (thumbnailVideoView != null && localVideoTrack != null) {
-                localVideoTrack.addRenderer(thumbnailVideoView);
-            }
-            setThumbnailMirror();
+    private void createLocalMedia() {
+        Log.i("CustomTwilioVideoView", "Create local media");
+        if (localAudioTrack == null) {
+          // Share your microphone
+          localAudioTrack = LocalAudioTrack.create(getContext(), true);
         }
-        connectToRoom();
+
+        if (localVideoTrack == null) {
+          if (cameraCapturer.getSupportedFormats().size() > 0) {
+              localVideoTrack = LocalVideoTrack.create(getContext(), true, cameraCapturer, buildVideoConstraints());
+              if (thumbnailVideoView != null && localVideoTrack != null) {
+                  localVideoTrack.addRenderer(thumbnailVideoView);
+              }
+              setThumbnailMirror();
+          }
+        }
     }
 
     // ===== LIFECYCLE EVENTS ======================================================================
@@ -313,12 +322,8 @@ public class CustomTwilioVideoView extends View implements LifecycleEventListene
 
         Log.i("CustomTwilioVideoView", "Starting connect flow");
 
-        if (cameraCapturer == null) {
-            createLocalMedia();
-        } else {
-            localAudioTrack = LocalAudioTrack.create(getContext(), true);
-            connectToRoom();
-        }
+        createLocalMedia();
+        connectToRoom();
     }
 
     public void connectToRoom() {
