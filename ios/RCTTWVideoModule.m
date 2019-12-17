@@ -30,10 +30,9 @@ static NSString* cameraWasInterrupted         = @"cameraWasInterrupted";
 static NSString* cameraDidStopRunning         = @"cameraDidStopRunning";
 static NSString* statsReceived                = @"statsReceived";
 
-@interface RCTTWVideoModule () <TVIRemoteParticipantDelegate, TVIRoomDelegate, TVICameraCapturerDelegate>
+@interface RCTTWVideoModule () <TVIRemoteParticipantDelegate, TVIRoomDelegate, TVICameraSourceDelegate>
 
-@property (strong, nonatomic) TVICameraCapturer *camera;
-@property (strong, nonatomic) TVIScreenCapturer *screen;
+@property (strong, nonatomic) TVICameraSource *camera;
 @property (strong, nonatomic) TVILocalVideoTrack* localVideoTrack;
 @property (strong, nonatomic) TVILocalAudioTrack* localAudioTrack;
 @property (strong, nonatomic) TVIRoom *room;
@@ -73,9 +72,17 @@ RCT_EXPORT_MODULE();
   ];
 }
 
+- (BOOL)cameraIsPosition:(AVCaptureDevicePosition)position {
+  if (!self.camera || !self.camera.device) {
+    return NO;
+  } else {
+    return self.camera.device.position == position;
+  }
+}
+
 - (void)addLocalView:(TVIVideoView *)view {
   [self.localVideoTrack addRenderer:view];
-  if (self.camera && self.camera.source == TVICameraCaptureSourceBackCameraWide) {
+  if ([self cameraIsPosition:AVCaptureDevicePositionBack]) {
     view.mirror = NO;
   } else {
     view.mirror = YES;
@@ -117,16 +124,17 @@ RCT_EXPORT_METHOD(setRemoteAudioPlayback:(NSString *)participantSid enabled:(BOO
 }
 
 RCT_EXPORT_METHOD(startLocalVideo:(BOOL)screenShare) {
-  if (screenShare) {
-    UIViewController *rootViewController = [UIApplication sharedApplication].delegate.window.rootViewController;
-    self.screen = [[TVIScreenCapturer alloc] initWithView:rootViewController.view];
-
-    self.localVideoTrack = [TVILocalVideoTrack trackWithCapturer:self.screen enabled:YES constraints:[self videoConstraints] name:@"screen"];
-  } else if ([TVICameraCapturer availableSources].count > 0) {
-    self.camera = [[TVICameraCapturer alloc] init];
-    self.camera.delegate = self;
-
-    self.localVideoTrack = [TVILocalVideoTrack trackWithCapturer:self.camera enabled:YES constraints:[self videoConstraints] name:@"camera"];
+  self.camera = [[TVICameraSource alloc] initWithDelegate:self];
+  if (self.camera) {
+    self.localVideoTrack = [TVILocalVideoTrack trackWithSource:self.camera enabled:true name:@"camera"];
+    AVCaptureDevice *device = [TVICameraSource captureDeviceForPosition:AVCaptureDevicePositionFront];
+    if (device) {
+      [self.camera startCaptureWithDevice:device completion:^(AVCaptureDevice * _Nonnull device, TVIVideoFormat * _Nonnull format, NSError * _Nullable error) {
+        if (!error) {
+          [self sendEventCheckingListenerWithName:cameraDidStart body:nil];
+        }
+      }];
+    }
   }
 }
 
@@ -159,18 +167,21 @@ RCT_REMAP_METHOD(setLocalVideoEnabled, enabled:(BOOL)enabled setLocalVideoEnable
 
 
 RCT_EXPORT_METHOD(flipCamera) {
-  if (self.camera.source == TVICameraCaptureSourceFrontCamera) {
-    [self.camera selectSource:TVICameraCaptureSourceBackCameraWide];
-    if (self.localVideoTrack) {
-      for (TVIVideoView *r in self.localVideoTrack.renderers) {
-        r.mirror = NO;
-      }
-    }
+  AVCaptureDevice *device;
+  BOOL mirror;
+  if ([self cameraIsPosition:AVCaptureDevicePositionFront]) {
+    device = [TVICameraSource captureDeviceForPosition:AVCaptureDevicePositionBack];
+    mirror = NO;
   } else {
-    [self.camera selectSource:TVICameraCaptureSourceFrontCamera];
+    device = [TVICameraSource captureDeviceForPosition:AVCaptureDevicePositionFront];
+    mirror = NO;
+  }
+
+  if (device) {
+    [self.camera selectCaptureDevice:device];
     if (self.localVideoTrack) {
       for (TVIVideoView *r in self.localVideoTrack.renderers) {
-        r.mirror = YES;
+        r.mirror = mirror;
       }
     }
   }
@@ -178,7 +189,7 @@ RCT_EXPORT_METHOD(flipCamera) {
 
 RCT_EXPORT_METHOD(toggleSoundSetup:(BOOL)speaker) {
   if(speaker){
-      kDefaultAVAudioSessionConfigurationBlock();
+      kTVIDefaultAVAudioSessionConfigurationBlock();
 
       // Overwrite the audio route
       AVAudioSession *session = [AVAudioSession sharedInstance];
@@ -191,7 +202,7 @@ RCT_EXPORT_METHOD(toggleSoundSetup:(BOOL)speaker) {
           NSLog(@"AVAudiosession overrideOutputAudioPort %@",error);
       }
     } else {
-      kDefaultAVAudioSessionConfigurationBlock();
+      kTVIDefaultAVAudioSessionConfigurationBlock();
 
       // Overwrite the audio route
       AVAudioSession *session = [AVAudioSession sharedInstance];
@@ -314,24 +325,14 @@ RCT_EXPORT_METHOD(connect:(NSString *)accessToken roomName:(NSString *)roomName)
     builder.roomName = roomName;
   }];
 
-  self.room = [TwilioVideo connectWithOptions:connectOptions delegate:self];
+  self.room = [TwilioVideoSDK connectWithOptions:connectOptions delegate:self];
 }
 
 RCT_EXPORT_METHOD(disconnect) {
   [self.room disconnect];
 }
 
--(TVIVideoConstraints*) videoConstraints {
-  return [TVIVideoConstraints constraintsWithBlock:^(TVIVideoConstraintsBuilder *builder) {
-    builder.minSize = TVIVideoConstraintsSize960x540;
-    builder.maxSize = TVIVideoConstraintsSize1280x720;
-    builder.aspectRatio = TVIAspectRatio16x9;
-    builder.minFrameRate = TVIVideoConstraintsFrameRateNone;
-    builder.maxFrameRate = TVIVideoConstraintsFrameRateNone;
-  }];
-}
-
-# pragma mark - TVICameraCapturerDelegate
+# pragma mark - TVICameraSourceDelegate
 
 -(void)sendEventCheckingListenerWithName:(NSString *)event body:(NSMutableDictionary *)body {
     if (_listening) {
@@ -339,15 +340,11 @@ RCT_EXPORT_METHOD(disconnect) {
     }
 }
 
--(void)cameraCapturerWasInterrupted:(TVICameraCapturer *)capturer {
+-(void)cameraSourceWasInterrupted:(TVICameraSource *)source reason:(AVCaptureSessionInterruptionReason)reason {
     [self sendEventCheckingListenerWithName:cameraWasInterrupted body:nil];
 }
 
--(void)cameraCapturerPreviewDidStart:(TVICameraCapturer *)capturer {
-  [self sendEventCheckingListenerWithName:cameraDidStart body:nil];
-}
-
--(void)cameraCapturer:(TVICameraCapturer *)capturer didStopRunningWithError:(NSError *)error {
+-(void)cameraSource:(TVICameraSource *)source didFailWithError:(NSError *)error {
   [self sendEventCheckingListenerWithName:cameraDidStopRunning body:@{ @"error" : error.localizedDescription }];
 }
 
@@ -402,35 +399,35 @@ RCT_EXPORT_METHOD(disconnect) {
 
 # pragma mark - TVIRemoteParticipantDelegate
 
-- (void)subscribedToVideoTrack:(TVIRemoteVideoTrack *)videoTrack publication:(TVIRemoteVideoTrackPublication *)publication forParticipant:(TVIRemoteParticipant *)participant {
+- (void)didSubscribeToVideoTrack:(TVIRemoteVideoTrack *)videoTrack publication:(TVIRemoteVideoTrackPublication *)publication forParticipant:(TVIRemoteParticipant *)participant {
     [self sendEventCheckingListenerWithName:participantAddedVideoTrack body:@{ @"participant": [participant toJSON], @"track": [publication toJSON] }];
 }
 
-- (void)unsubscribedFromVideoTrack:(TVIRemoteVideoTrack *)videoTrack publication:(TVIRemoteVideoTrackPublication *)publication forParticipant:(TVIRemoteParticipant *)participant {
+- (void)didUnsubscribeFromVideoTrack:(TVIRemoteVideoTrack *)videoTrack publication:(TVIRemoteVideoTrackPublication *)publication forParticipant:(TVIRemoteParticipant *)participant {
     [self sendEventCheckingListenerWithName:participantRemovedVideoTrack body:@{ @"participant": [participant toJSON], @"track": [publication toJSON] }];
 }
 
-- (void)subscribedToAudioTrack:(TVIRemoteAudioTrack *)audioTrack publication:(TVIRemoteAudioTrackPublication *)publication forParticipant:(TVIRemoteParticipant *)participant {
+- (void)didSubscribeToAudioTrack:(TVIRemoteAudioTrack *)audioTrack publication:(TVIRemoteAudioTrackPublication *)publication forParticipant:(TVIRemoteParticipant *)participant {
     [self sendEventCheckingListenerWithName:participantAddedAudioTrack body:@{ @"participant": [participant toJSON], @"track": [publication toJSON] }];
 }
 
-- (void)unsubscribedFromAudioTrack:(TVIRemoteAudioTrack *)audioTrack publication:(TVIRemoteAudioTrackPublication *)publication forParticipant:(TVIRemoteParticipant *)participant {
+- (void)didUnsubscribeFromAudioTrack:(TVIRemoteAudioTrack *)audioTrack publication:(TVIRemoteAudioTrackPublication *)publication forParticipant:(TVIRemoteParticipant *)participant {
     [self sendEventCheckingListenerWithName:participantRemovedAudioTrack body:@{ @"participant": [participant toJSON], @"track": [publication toJSON] }];
 }
 
-- (void)remoteParticipant:(TVIRemoteParticipant *)participant enabledVideoTrack:(TVIRemoteVideoTrackPublication *)publication {
+- (void)remoteParticipant:(TVIRemoteParticipant *)participant didEnableVideoTrack:(nonnull TVIRemoteVideoTrackPublication *)publication {
   [self sendEventCheckingListenerWithName:participantEnabledVideoTrack body:@{ @"participant": [participant toJSON], @"track": [publication toJSON] }];
 }
 
-- (void)remoteParticipant:(TVIRemoteParticipant *)participant disabledVideoTrack:(TVIRemoteVideoTrackPublication *)publication {
+- (void)remoteParticipant:(TVIRemoteParticipant *)participant didDisableVideoTrack:(nonnull TVIRemoteVideoTrackPublication *)publication {
   [self sendEventCheckingListenerWithName:participantDisabledVideoTrack body:@{ @"participant": [participant toJSON], @"track": [publication toJSON] }];
 }
 
-- (void)remoteParticipant:(TVIRemoteParticipant *)participant enabledAudioTrack:(TVIRemoteAudioTrackPublication *)publication {
+- (void)remoteParticipant:(TVIRemoteParticipant *)participant didEnableAudioTrack:(nonnull TVIRemoteAudioTrackPublication *)publication {
     [self sendEventCheckingListenerWithName:participantEnabledAudioTrack body:@{ @"participant": [participant toJSON], @"track": [publication toJSON] }];
 }
 
-- (void)remoteParticipant:(TVIRemoteParticipant *)participant disabledAudioTrack:(TVIRemoteAudioTrackPublication *)publication {
+- (void)remoteParticipant:(TVIRemoteParticipant *)participant didDisableAudioTrack:(nonnull TVIRemoteAudioTrackPublication *)publication {
     [self sendEventCheckingListenerWithName:participantDisabledAudioTrack body:@{ @"participant": [participant toJSON], @"track": [publication toJSON] }];
 }
 
