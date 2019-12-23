@@ -14,7 +14,7 @@ import com.twilio.video.VideoRenderer;
 import com.twilio.video.VideoScaleType;
 import com.twilio.video.VideoView;
 
-import org.webrtc.RendererCommon;
+import tvi.webrtc.RendererCommon;
 
 public class RNVideoViewGroup extends ViewGroup {
     private VideoView surfaceViewRenderer = null;

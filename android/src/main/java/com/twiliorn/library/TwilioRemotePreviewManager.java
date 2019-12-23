@@ -7,14 +7,14 @@
 
 package com.twiliorn.library;
 
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import android.util.Log;
 
 import com.facebook.react.uimanager.SimpleViewManager;
 import com.facebook.react.uimanager.ThemedReactContext;
 import com.facebook.react.uimanager.annotations.ReactProp;
 
-import org.webrtc.RendererCommon;
+import tvi.webrtc.RendererCommon;
 
 
 public class TwilioRemotePreviewManager extends SimpleViewManager<TwilioRemotePreview> {

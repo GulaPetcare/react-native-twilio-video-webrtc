@@ -17,8 +17,8 @@ import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
-import android.support.annotation.NonNull;
-import android.support.annotation.StringDef;
+import androidx.annotation.NonNull;
+import androidx.annotation.StringDef;
 import android.util.Log;
 import android.view.View;
 
@@ -51,7 +51,6 @@ import com.twilio.video.RemoteVideoTrack;
 import com.twilio.video.RemoteVideoTrackPublication;
 import com.twilio.video.RemoteVideoTrackStats;
 import com.twilio.video.Room;
-import com.twilio.video.Room.State;
 import com.twilio.video.StatsListener;
 import com.twilio.video.StatsReport;
 import com.twilio.video.TrackPublication;
@@ -61,7 +60,7 @@ import com.twilio.video.VideoConstraints;
 import com.twilio.video.VideoDimensions;
 import com.twilio.video.VideoView;
 
-import org.webrtc.voiceengine.WebRtcAudioManager;
+import tvi.webrtc.voiceengine.WebRtcAudioManager;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
