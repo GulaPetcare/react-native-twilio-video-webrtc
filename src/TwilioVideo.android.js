@@ -192,6 +192,10 @@ class CustomTwilioVideoView extends Component {
   }
 
   runCommand (event, args) {
+    if (findNodeHandle(this.refs.videoView) == null) {
+      return
+    }
+
     switch (Platform.OS) {
       case 'android':
         UIManager.dispatchViewManagerCommand(
