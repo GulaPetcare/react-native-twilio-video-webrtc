@@ -136,8 +136,6 @@ export default class extends Component {
 
   componentWillMount () {
     this._registerEvents()
-    this._startLocalVideo()
-    this._startLocalAudio()
   }
 
   componentWillUnmount () {
@@ -201,7 +199,13 @@ export default class extends Component {
    * @param  {String} roomName    The connecting room name
    * @param  {String} accessToken The Twilio's JWT access token
    */
-  connect ({ roomName, accessToken }) {
+  connect ({ roomName, accessToken, enableAudio = true, enableVideo = true }) {
+    if (enableVideo) {
+      this._startLocalVideo()
+    }
+    if (enableAudio) {
+      this._startLocalAudio()
+    }
     TWVideoModule.connect(accessToken, roomName)
   }
 
@@ -209,6 +213,8 @@ export default class extends Component {
    * Disconnect from current room
    */
   disconnect () {
+    this._stopLocalVideo()
+    this._stopLocalAudio()
     TWVideoModule.disconnect()
   }
 
