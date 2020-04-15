@@ -329,7 +329,9 @@ RCT_EXPORT_METHOD(connect:(NSString *)accessToken roomName:(NSString *)roomName)
 }
 
 RCT_EXPORT_METHOD(disconnect) {
-  [self.room disconnect];
+  if (self.room) {
+    [self.room disconnect];
+  }
 }
 
 # pragma mark - TVICameraSourceDelegate
